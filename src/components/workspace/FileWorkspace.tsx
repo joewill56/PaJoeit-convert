@@ -190,6 +190,22 @@ export const FileWorkspace: React.FC<FileWorkspaceProps> = ({
           }
 
           // Failed after retry or permanent error: mark as failed and CONTINUE with remaining queue!
+          const errCode = err instanceof ImageProcessingError ? err.code : 'UNKNOWN_ERROR';
+          let localizedErrorMessage =
+            err?.message ||
+            tr.errCompression;
+          if (errCode === 'DECODE_ERROR') {
+            localizedErrorMessage = tr.errDecode;
+          } else if (errCode === 'MEMORY_ERROR') {
+            localizedErrorMessage = tr.errMemory;
+          } else if (errCode === 'UNSUPPORTED_FORMAT') {
+            localizedErrorMessage = tr.errUnsupported;
+          } else if (errCode === 'DIMENSION_ERROR') {
+            localizedErrorMessage = tr.errDimension;
+          } else if (errCode === 'COMPRESSION_ERROR') {
+            localizedErrorMessage = tr.errCompression;
+          }
+
           setItems((prev) =>
             prev.map((item) =>
               item.id === target.id
@@ -197,10 +213,8 @@ export const FileWorkspace: React.FC<FileWorkspaceProps> = ({
                     ...item,
                     status: 'error',
                     progress: 0,
-                    errorMessage:
-                      err?.message ||
-                      'Something went wrong while processing this image. Please try again.',
-                    errorCode: err instanceof ImageProcessingError ? err.code : 'UNKNOWN_ERROR',
+                    errorMessage: localizedErrorMessage,
+                    errorCode: errCode,
                   }
                 : item
             )
@@ -255,10 +269,7 @@ export const FileWorkspace: React.FC<FileWorkspaceProps> = ({
     try {
       await downloadAllAsZip(items, 'pajoeit-optimized-images.zip');
     } catch (err: any) {
-      setZipErrorMessage(
-        err?.message ||
-          'Your files were processed successfully, but this ZIP is too large for this device to create reliably. Please download the files individually or create smaller batches.'
-      );
+      setZipErrorMessage(tr.zipTooLargeWarning || err?.message);
     } finally {
       setIsZipping(false);
     }
@@ -352,7 +363,7 @@ export const FileWorkspace: React.FC<FileWorkspaceProps> = ({
       </div>
 
       {/* Visual Workflow Pipeline Banner */}
-      <WorkflowBar settings={globalSettings} fileCount={items.length} />
+      <WorkflowBar settings={globalSettings} fileCount={items.length} lang={lang} />
 
       {/* Expandable Settings Panel */}
       {showSettingsDrawer && (
@@ -361,6 +372,7 @@ export const FileWorkspace: React.FC<FileWorkspaceProps> = ({
           onChange={handleSettingsChange}
           onApplyToAll={handleApplyToAll}
           fileCount={items.length}
+          lang={lang}
         />
       )}
 
@@ -372,6 +384,7 @@ export const FileWorkspace: React.FC<FileWorkspaceProps> = ({
           currentFileName={currentProcessingFile}
           stepMessage={currentStepMessage}
           overallProgress={overallProgress}
+          lang={lang}
         />
       )}
 
@@ -405,6 +418,7 @@ export const FileWorkspace: React.FC<FileWorkspaceProps> = ({
               item={item}
               onRemove={handleRemoveItem}
               onOpenCompare={(target) => setCompareItem(target)}
+              lang={lang}
             />
           ))}
         </div>
@@ -457,6 +471,7 @@ export const FileWorkspace: React.FC<FileWorkspaceProps> = ({
         <BeforeAfterModal
           item={compareItem}
           onClose={() => setCompareItem(null)}
+          lang={lang}
         />
       )}
     </div>

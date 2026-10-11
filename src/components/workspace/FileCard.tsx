@@ -12,18 +12,37 @@ import {
 import { ProcessedImageItem } from '../../types/image';
 import { formatBytes, formatDimensions, getMimeShortName } from '../../lib/image-engine/file-utils';
 import { downloadSingleFile } from '../../lib/image-engine/zip-downloader';
+import { LanguageCode } from '../../lib/i18n/languages';
+import { t } from '../../lib/i18n/translations';
 
 interface FileCardProps {
   item: ProcessedImageItem;
   onRemove: (id: string) => void;
   onOpenCompare: (item: ProcessedImageItem) => void;
+  lang?: LanguageCode;
 }
 
-export const FileCard: React.FC<FileCardProps> = ({ item, onRemove, onOpenCompare }) => {
+export const FileCard: React.FC<FileCardProps> = ({
+  item,
+  onRemove,
+  onOpenCompare,
+  lang = 'en',
+}) => {
   const isComplete = item.status === 'success';
   const isProcessing = item.status === 'processing';
   const isQueued = item.status === 'queued';
   const isError = item.status === 'error';
+  const tr = t(lang);
+
+  const resolvedErrorMessage = (() => {
+    if (!isError) return null;
+    if (item.errorCode === 'DECODE_ERROR') return tr.errDecode;
+    if (item.errorCode === 'MEMORY_ERROR') return tr.errMemory;
+    if (item.errorCode === 'UNSUPPORTED_FORMAT') return tr.errUnsupported;
+    if (item.errorCode === 'DIMENSION_ERROR') return tr.errDimension;
+    if (item.errorCode === 'COMPRESSION_ERROR') return tr.errCompression;
+    return item.errorMessage || tr.errCompression;
+  })();
 
   return (
     <div
@@ -69,30 +88,30 @@ export const FileCard: React.FC<FileCardProps> = ({ item, onRemove, onOpenCompar
             </h4>
             {isComplete && (
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                <CheckCircle2 className="w-3 h-3" /> Ready
+                <CheckCircle2 className="w-3 h-3" /> {tr.readyStatus}
               </span>
             )}
             {isProcessing && (
               <span className="inline-flex items-center gap-1 rounded-full bg-cyan-500/15 px-2 py-0.5 text-[10px] font-bold text-cyan-600 dark:text-cyan-400 font-mono">
-                <Loader2 className="w-3 h-3 animate-spin" /> Processing
+                <Loader2 className="w-3 h-3 animate-spin" /> {tr.processing}
               </span>
             )}
             {isQueued && (
               <span className="inline-flex items-center gap-1 rounded-full bg-slate-500/15 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:text-slate-400 font-mono">
-                <Clock className="w-3 h-3" /> Queued
+                <Clock className="w-3 h-3" /> {tr.queuedStatus}
               </span>
             )}
             {isError && (
               <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 px-2 py-0.5 text-[10px] font-bold text-rose-600 dark:text-rose-400 font-mono">
-                <AlertCircle className="w-3 h-3" /> Error
+                <AlertCircle className="w-3 h-3" /> {tr.errorStatus}
               </span>
             )}
           </div>
 
           {/* Error Message if failed */}
-          {isError && item.errorMessage && (
+          {isError && resolvedErrorMessage && (
             <p className="mt-1 text-xs text-rose-600 dark:text-rose-400 font-medium leading-relaxed">
-              {item.errorMessage}
+              {resolvedErrorMessage}
             </p>
           )}
 
@@ -130,10 +149,10 @@ export const FileCard: React.FC<FileCardProps> = ({ item, onRemove, onOpenCompar
           <button
             onClick={() => onOpenCompare(item)}
             className="inline-flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition"
-            title="Inspect Before/After Image Comparison"
+            title={tr.compare}
           >
             <Eye className="w-3.5 h-3.5 text-cyan-500" />
-            <span>Compare</span>
+            <span>{tr.compare}</span>
           </button>
         )}
 
@@ -142,10 +161,10 @@ export const FileCard: React.FC<FileCardProps> = ({ item, onRemove, onOpenCompar
           <button
             onClick={() => downloadSingleFile(item)}
             className="inline-flex items-center gap-1 rounded-xl bg-cyan-500 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-cyan-400 transition"
-            title="Download this processed image"
+            title={tr.download}
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Save</span>
+            <span>{tr.download}</span>
           </button>
         )}
 

@@ -1,5 +1,13 @@
 import { ImageDimensions, ImageErrorCode, ImageProcessingSettings, ProcessedImageItem } from '../../types/image';
-import { getDeviceMemorySafeLimits, getExtensionFromMime, isSupportedImageFile } from './file-utils';
+import {
+  detectMimeFromBytes,
+  getDeviceMemorySafeLimits,
+  getExtensionFromMime,
+  isSupportedImageFile,
+  parseHeaderDimensions,
+  parseJpegExifOrientation,
+  sanitizeJpegBytes,
+} from './file-utils';
 import { optimizeToTargetSize } from './target-size';
 
 export class ImageProcessingError extends Error {
@@ -114,79 +122,18 @@ export function calculateTargetDimensions(
 }
 
 /**
- * Decodes the image source efficiently using createImageBitmap when supported,
- * with EXIF orientation awareness and guaranteed closure.
- * Falls back to HTMLImageElement with immediate lifecycle cleanup.
+ * Loads a Blob into an HTMLImageElement without setting crossOrigin on same-origin
+ * blob: URLs and without racing img.decode() against img.onload.
  */
-async function decodeSourceImage(
-  blob: Blob,
-  targetDims: ImageDimensions,
-  originalDims: ImageDimensions
-): Promise<DecodedImageSource> {
-  // 1. Try modern createImageBitmap
-  if (typeof createImageBitmap === 'function') {
-    const isDownscaling =
-      (originalDims.width > 0 && targetDims.width < originalDims.width) ||
-      (originalDims.height > 0 && targetDims.height < originalDims.height);
-
-    // Option A: Downscale directly during decode (preserves EXIF orientation)
-    if (isDownscaling && targetDims.width > 0 && targetDims.height > 0) {
-      try {
-        const bitmap = await createImageBitmap(blob, {
-          resizeWidth: targetDims.width,
-          resizeHeight: targetDims.height,
-          resizeQuality: 'high',
-          imageOrientation: 'from-image',
-        });
-        let closed = false;
-        return {
-          source: bitmap,
-          width: targetDims.width,
-          height: targetDims.height,
-          isBitmap: true,
-          close: () => {
-            if (!closed) {
-              closed = true;
-              try {
-                bitmap.close();
-              } catch {}
-            }
-          },
-        };
-      } catch {
-        // Fallback to standard decode
-      }
-    }
-
-    // Option B: Standard decode with orientation
-    try {
-      const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
-      let closed = false;
-      return {
-        source: bitmap,
-        width: bitmap.width,
-        height: bitmap.height,
-        isBitmap: true,
-        close: () => {
-          if (!closed) {
-            closed = true;
-            try {
-              bitmap.close();
-            } catch {}
-          }
-        },
-      };
-    } catch {
-      // Fallback to HTMLImageElement
-    }
-  }
-
-  // 2. Fallback: HTMLImageElement decode with guaranteed cleanup
+function loadBlobViaHtmlImage(blob: Blob): Promise<{
+  img: HTMLImageElement;
+  width: number;
+  height: number;
+  close: () => void;
+}> {
   const url = URL.createObjectURL(blob);
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-
   return new Promise((resolve, reject) => {
+    const img = new Image();
     let isSettled = false;
     let isClosed = false;
 
@@ -203,13 +150,14 @@ async function decodeSourceImage(
     img.onload = () => {
       if (!isSettled) {
         isSettled = true;
-        resolve({
-          source: img,
-          width: img.naturalWidth || targetDims.width,
-          height: img.naturalHeight || targetDims.height,
-          isBitmap: false,
-          close,
-        });
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (w > 0 && h > 0) {
+          resolve({ img, width: w, height: h, close });
+        } else {
+          close();
+          reject(new Error('Loaded image has zero dimensions'));
+        }
       }
     };
 
@@ -217,37 +165,355 @@ async function decodeSourceImage(
       if (!isSettled) {
         isSettled = true;
         close();
-        reject(
-          new ImageProcessingError(
-            'DECODE_ERROR',
-            'Image could not be decoded. The file may be corrupted or in an unsupported format.'
-          )
-        );
+        reject(new Error('HTMLImageElement failed to load blob'));
       }
     };
 
     img.src = url;
-
-    if (typeof img.decode === 'function') {
-      img
-        .decode()
-        .then(() => {
-          if (!isSettled && (img.naturalWidth > 0 || img.width > 0)) {
-            isSettled = true;
-            resolve({
-              source: img,
-              width: img.naturalWidth || targetDims.width,
-              height: img.naturalHeight || targetDims.height,
-              isBitmap: false,
-              close,
-            });
-          }
-        })
-        .catch(() => {
-          // Handled by onload
-        });
-    }
   });
+}
+
+/**
+ * Draws a decoded image source (HTMLImageElement or ImageBitmap) onto a newly
+ * allocated canvas of targetDims, applying manual EXIF orientation if the source
+ * was decoded without automatic EXIF rotation (e.g. when EXIF was stripped or
+ * plain createImageBitmap was used on an older browser).
+ */
+function renderSourceToCanvas(
+  source: ImageBitmap | HTMLImageElement,
+  sourceW: number,
+  sourceH: number,
+  targetDims: ImageDimensions,
+  outputMime: string,
+  manualExifOrientation = 1
+): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = targetDims.width;
+  canvas.height = targetDims.height;
+
+  try {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new ImageProcessingError(
+        'MEMORY_ERROR',
+        'This image is too large for this device to process safely.',
+        true
+      );
+    }
+
+    if (outputMime === 'image/jpeg') {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, targetDims.width, targetDims.height);
+    }
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    // Determine if the decoded source needs manual 90/180/270 EXIF rotation:
+    // If manualExifOrientation is 5..8 AND the source's aspect orientation is still unrotated
+    // compared to targetDims, or if manualExifOrientation is 2..4 when EXIF was stripped:
+    const needsManualTransform =
+      manualExifOrientation > 1 &&
+      (manualExifOrientation <= 4 ||
+        (sourceW > sourceH) !== (targetDims.width > targetDims.height));
+
+    if (needsManualTransform) {
+      const w = targetDims.width;
+      const h = targetDims.height;
+      ctx.save();
+      switch (manualExifOrientation) {
+        case 2:
+          ctx.translate(w, 0);
+          ctx.scale(-1, 1);
+          ctx.drawImage(source, 0, 0, w, h);
+          break;
+        case 3:
+          ctx.translate(w, h);
+          ctx.rotate(Math.PI);
+          ctx.drawImage(source, 0, 0, w, h);
+          break;
+        case 4:
+          ctx.translate(0, h);
+          ctx.scale(1, -1);
+          ctx.drawImage(source, 0, 0, w, h);
+          break;
+        case 5:
+          ctx.rotate(0.5 * Math.PI);
+          ctx.scale(1, -1);
+          ctx.drawImage(source, 0, 0, h, w);
+          break;
+        case 6:
+          ctx.translate(w, 0);
+          ctx.rotate(0.5 * Math.PI);
+          ctx.drawImage(source, 0, 0, h, w);
+          break;
+        case 7:
+          ctx.translate(w, h);
+          ctx.rotate(0.5 * Math.PI);
+          ctx.scale(-1, 1);
+          ctx.drawImage(source, 0, 0, h, w);
+          break;
+        case 8:
+          ctx.translate(0, h);
+          ctx.rotate(-0.5 * Math.PI);
+          ctx.drawImage(source, 0, 0, h, w);
+          break;
+        default:
+          ctx.drawImage(source, 0, 0, w, h);
+          break;
+      }
+      ctx.restore();
+    } else {
+      ctx.drawImage(source, 0, 0, targetDims.width, targetDims.height);
+    }
+
+    return canvas;
+  } catch (err) {
+    canvas.width = 0;
+    canvas.height = 0;
+    throw err;
+  }
+}
+
+/**
+ * Multi-stage resilient decode-and-draw pipeline for real-world phone photos:
+ * - Normalizes MIME type from binary magic bytes.
+ * - Tries HTMLImageElement (stream-decoded by browser into target canvas).
+ * - Tries createImageBitmap with medium resize / from-image orientation / plain options.
+ * - If an Android camera JPEG fails due to vendor APP segments, MPF depth maps,
+ *   or corrupted EXIF/ICC headers, sanitizes the JPEG bitstream and retries while
+ *   preserving EXIF orientation.
+ * - Guarantees strict try/finally cleanup of every ImageBitmap, object URL, and canvas.
+ */
+async function decodeAndRenderToCanvas(
+  file: Blob,
+  initialTargetDims: ImageDimensions,
+  originalDims: ImageDimensions,
+  outputMime: string
+): Promise<{ canvas: HTMLCanvasElement; actualDims: ImageDimensions }> {
+  let rawBytes: Uint8Array | null = null;
+  let detectedMime = file.type || 'image/jpeg';
+  let exifOrientation = 1;
+
+  try {
+    const ab = await file.arrayBuffer();
+    rawBytes = new Uint8Array(ab);
+    if (rawBytes.length === 0) {
+      throw new ImageProcessingError(
+        'DECODE_ERROR',
+        'Image could not be decoded. The file may be corrupted or in an unsupported format.'
+      );
+    }
+    detectedMime = detectMimeFromBytes(rawBytes, file.type, file instanceof File ? file.name : '');
+    if (detectedMime === 'image/jpeg') {
+      exifOrientation = parseJpegExifOrientation(rawBytes);
+    }
+  } catch (err) {
+    if (err instanceof ImageProcessingError) throw err;
+    // Continue with original blob if arrayBuffer read failed
+  }
+
+  // Re-verify dimensions from full rawBytes if initial originalDims was a fallback
+  let targetDims = initialTargetDims;
+  if (rawBytes) {
+    const headerDims = parseHeaderDimensions(rawBytes);
+    if (
+      headerDims &&
+      headerDims.width > 0 &&
+      headerDims.height > 0 &&
+      (originalDims.width !== headerDims.width || originalDims.height !== headerDims.height)
+    ) {
+      // If header dimensions were rotated or refined, keep targetDims aspect ratio consistent
+      if ((headerDims.width > headerDims.height) !== (targetDims.width > targetDims.height)) {
+        targetDims = { width: targetDims.height, height: targetDims.width };
+      }
+    }
+  }
+
+  const normalizedBlob =
+    rawBytes && detectedMime
+      ? new Blob([rawBytes as unknown as BlobPart], { type: detectedMime })
+      : file;
+
+  const tryDecodeBlobToCanvas = async (
+    blobToDecode: Blob,
+    dims: ImageDimensions,
+    manualOrientation = 1
+  ): Promise<HTMLCanvasElement> => {
+    // Strategy A: HTMLImageElement (uses native browser streaming JPEG DCT scaling into target canvas)
+    try {
+      const loaded = await loadBlobViaHtmlImage(blobToDecode);
+      try {
+        return renderSourceToCanvas(
+          loaded.img,
+          loaded.width,
+          loaded.height,
+          dims,
+          outputMime,
+          manualOrientation
+        );
+      } finally {
+        loaded.close();
+      }
+    } catch {
+      // Fall through to Strategy B
+    }
+
+    // Strategy B: createImageBitmap variations
+    if (typeof createImageBitmap === 'function') {
+      // B1: Downscaled createImageBitmap with resizeQuality: 'medium' (only when no 90/270 rotation ambiguity)
+      if (exifOrientation <= 4 && dims.width > 0 && dims.height > 0) {
+        let bitmap: ImageBitmap | null = null;
+        try {
+          bitmap = await createImageBitmap(blobToDecode, {
+            resizeWidth: dims.width,
+            resizeHeight: dims.height,
+            resizeQuality: 'medium',
+            imageOrientation: 'from-image',
+          });
+          return renderSourceToCanvas(
+            bitmap,
+            bitmap.width,
+            bitmap.height,
+            dims,
+            outputMime,
+            manualOrientation
+          );
+        } catch {
+          // Fall through
+        } finally {
+          if (bitmap) {
+            try {
+              bitmap.close();
+            } catch {}
+          }
+        }
+      }
+
+      // B2: Standard createImageBitmap with imageOrientation: 'from-image'
+      {
+        let bitmap: ImageBitmap | null = null;
+        try {
+          bitmap = await createImageBitmap(blobToDecode, {
+            imageOrientation: 'from-image',
+          });
+          return renderSourceToCanvas(
+            bitmap,
+            bitmap.width,
+            bitmap.height,
+            dims,
+            outputMime,
+            manualOrientation
+          );
+        } catch {
+          // Fall through
+        } finally {
+          if (bitmap) {
+            try {
+              bitmap.close();
+            } catch {}
+          }
+        }
+      }
+
+      // B3: Plain createImageBitmap without options (maximum mobile browser compatibility)
+      {
+        let bitmap: ImageBitmap | null = null;
+        try {
+          bitmap = await createImageBitmap(blobToDecode);
+          return renderSourceToCanvas(
+            bitmap,
+            bitmap.width,
+            bitmap.height,
+            dims,
+            outputMime,
+            manualOrientation > 1 ? manualOrientation : exifOrientation
+          );
+        } catch {
+          // Fall through
+        } finally {
+          if (bitmap) {
+            try {
+              bitmap.close();
+            } catch {}
+          }
+        }
+      }
+    }
+
+    throw new Error('All primary decode strategies failed for blob');
+  };
+
+  // Pass 1: Decode normalizedBlob at targetDims
+  try {
+    const canvas = await tryDecodeBlobToCanvas(normalizedBlob, targetDims, 1);
+    return { canvas, actualDims: targetDims };
+  } catch {
+    // Continue to Pass 2
+  }
+
+  // Pass 2: If JPEG, sanitize JPEG bitstream (strips trailing MPF/UltraHDR streams and vendor APP segments)
+  if (rawBytes && detectedMime === 'image/jpeg') {
+    // 2A: Sanitize keeping EXIF APP1
+    const cleanKeepExif = sanitizeJpegBytes(rawBytes, false);
+    if (cleanKeepExif) {
+      try {
+        const cleanBlob = new Blob([cleanKeepExif as unknown as BlobPart], { type: 'image/jpeg' });
+        const canvas = await tryDecodeBlobToCanvas(cleanBlob, targetDims, exifOrientation);
+        return { canvas, actualDims: targetDims };
+      } catch {
+        // Continue to 2B
+      }
+    }
+
+    // 2B: Sanitize stripping EXIF APP1 as well (recovers JPEGs with corrupted EXIF/TIFF tables)
+    // and apply the parsed exifOrientation (1..8) manually on the canvas!
+    const cleanStripExif = sanitizeJpegBytes(rawBytes, true);
+    if (cleanStripExif) {
+      try {
+        const cleanBlob = new Blob([cleanStripExif as unknown as BlobPart], { type: 'image/jpeg' });
+        const canvas = await tryDecodeBlobToCanvas(cleanBlob, targetDims, exifOrientation);
+        return { canvas, actualDims: targetDims };
+      } catch {
+        // Continue to Pass 3
+      }
+    }
+  }
+
+  // Pass 3: If decoding failed due to device memory pressure on large dimensions, step down by 0.65x
+  if (targetDims.width > 1024 || targetDims.height > 1024) {
+    const reducedDims: ImageDimensions = {
+      width: Math.max(320, Math.round(targetDims.width * 0.65)),
+      height: Math.max(240, Math.round(targetDims.height * 0.65)),
+    };
+    try {
+      const reducedBytes = rawBytes ? sanitizeJpegBytes(rawBytes, true) || rawBytes : null;
+      const sourceForReduced =
+        reducedBytes && detectedMime === 'image/jpeg'
+          ? new Blob([reducedBytes as unknown as BlobPart], { type: 'image/jpeg' })
+          : normalizedBlob;
+      const canvas = await tryDecodeBlobToCanvas(
+        sourceForReduced,
+        reducedDims,
+        exifOrientation
+      );
+      return { canvas, actualDims: reducedDims };
+    } catch {
+      // Fall through to error classification
+    }
+  }
+
+  if (detectedMime === 'image/heic') {
+    throw new ImageProcessingError(
+      'UNSUPPORTED_FORMAT',
+      'This image format is not supported.'
+    );
+  }
+
+  throw new ImageProcessingError(
+    'DECODE_ERROR',
+    'Image could not be decoded. The file may be corrupted or in an unsupported format.'
+  );
 }
 
 /**
@@ -414,14 +680,32 @@ export async function processSingleImage(
     );
   }
 
-  onProgress?.(15, 'Preparing memory-safe decode...');
-  const targetDims = calculateTargetDimensions(item.originalDimensions, item.settings);
+  // 3. Determine Output MIME Type
+  let outputMime = item.settings.outputFormat;
+  if (outputMime === 'original') {
+    outputMime = (item.originalFormat || 'image/jpeg') as any;
+  }
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(outputMime)) {
+    outputMime = 'image/jpeg';
+  }
 
-  // 3. Decode Image using createImageBitmap or fallback
-  onProgress?.(30, 'Decoding image...');
-  let decoded: DecodedImageSource;
+  onProgress?.(15, 'Preparing memory-safe decode...');
+  const initialTargetDims = calculateTargetDimensions(item.originalDimensions, item.settings);
+
+  // 4. Multi-stage resilient decode and render onto target canvas
+  onProgress?.(35, 'Decoding image...');
+  let canvas: HTMLCanvasElement | null = null;
+  let targetDims = initialTargetDims;
+
   try {
-    decoded = await decodeSourceImage(file, targetDims, item.originalDimensions);
+    const decodedResult = await decodeAndRenderToCanvas(
+      file,
+      initialTargetDims,
+      item.originalDimensions,
+      outputMime
+    );
+    canvas = decodedResult.canvas;
+    targetDims = decodedResult.actualDims;
   } catch (err: any) {
     const msg = String(err?.message || '').toLowerCase();
     if (
@@ -447,47 +731,8 @@ export async function processSingleImage(
     );
   }
 
-  let canvas: HTMLCanvasElement | null = null;
   try {
-    onProgress?.(50, 'Initializing canvas buffer...');
-    canvas = document.createElement('canvas');
-    canvas.width = targetDims.width;
-    canvas.height = targetDims.height;
-
-    const ctx = canvas.getContext('2d', { willReadFrequently: false });
-    if (!ctx) {
-      throw new ImageProcessingError(
-        'MEMORY_ERROR',
-        'This image is too large for this device to process safely.',
-        true
-      );
-    }
-
-    // 4. Output MIME determination
-    let outputMime = item.settings.outputFormat;
-    if (outputMime === 'original') {
-      outputMime = (item.originalFormat || 'image/jpeg') as any;
-    }
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(outputMime)) {
-      outputMime = 'image/jpeg';
-    }
-
-    // 5. Alpha background handling for JPEG:
-    // When converting transparent PNG/WebP to JPEG, fill canvas with clean opaque white
-    if (outputMime === 'image/jpeg') {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, targetDims.width, targetDims.height);
-    }
-
-    // 6. Draw image onto canvas
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(decoded.source, 0, 0, targetDims.width, targetDims.height);
-
-    // 7. CRITICAL: Immediately close decoded source once drawn on canvas!
-    decoded.close();
-
-    // 8. Compression / Target Size
+    // 5. Compression / Target Size
     let finalBlob: Blob;
     let finalDims = targetDims;
     let targetAchievedInfo: ProcessImageResult['targetAchieved'] = undefined;
@@ -545,8 +790,7 @@ export async function processSingleImage(
       targetAchieved: targetAchievedInfo,
     };
   } finally {
-    // 9. GUARANTEED CLEANUP: Close decoded source and reset canvas buffer
-    decoded.close();
+    // 6. GUARANTEED CLEANUP: Reset canvas buffer to 0x0 to free GPU/RAM immediately
     if (canvas) {
       canvas.width = 0;
       canvas.height = 0;

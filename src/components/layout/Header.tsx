@@ -14,15 +14,22 @@ import { PWAInstallButton } from './PWAInstallButton';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { LanguageCode } from '../../lib/i18n/languages';
 import { t } from '../../lib/i18n/translations';
+import { getLocalizedTool } from '../../lib/i18n/translations/tools';
 import { Logo } from '../brand/Logo';
 
 interface HeaderProps {
   currentPath: string;
   lang: LanguageCode;
   onNavigate: (path: string) => void;
+  onSelectLanguage?: (lang: LanguageCode) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ currentPath, lang, onNavigate }) => {
+export const Header: React.FC<HeaderProps> = ({
+  currentPath,
+  lang,
+  onNavigate,
+  onSelectLanguage,
+}) => {
   const { theme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toolsDropdownOpen, setToolsDropdownOpen] = useState(false);
@@ -34,14 +41,17 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, lang, onNavigate })
   const aboutPath = lang === 'en' ? '/about' : `/${lang}/about`;
 
   const popularTools = [
-    { name: 'WebP to PNG', slug: 'webp-to-png' },
-    { name: 'WebP to JPG', slug: 'webp-to-jpg' },
-    { name: 'PNG to JPG', slug: 'png-to-jpg' },
-    { name: 'JPG to PNG', slug: 'jpg-to-png' },
-    { name: 'Image Compressor', slug: 'image-compressor' },
-    { name: 'Image Resizer', slug: 'image-resizer' },
-    { name: 'Compress JPG to 100KB', slug: 'compress-jpg-to-100kb' },
-  ];
+    'webp-to-png',
+    'webp-to-jpg',
+    'png-to-jpg',
+    'jpg-to-png',
+    'image-compressor',
+    'image-resizer',
+    'compress-jpg-to-100kb',
+  ].map((slug) => ({
+    slug,
+    name: getLocalizedTool(slug, lang).shortTitle,
+  }));
 
   const getToolPath = (slug: string) => {
     return lang === 'en' ? `/${slug}` : `/${lang}/${slug}`;
@@ -197,6 +207,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, lang, onNavigate })
             currentLang={lang}
             currentPath={currentPath}
             onNavigate={onNavigate}
+            onSelectLanguage={onSelectLanguage}
           />
 
           {/* PWA Install Button */}

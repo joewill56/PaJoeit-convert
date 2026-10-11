@@ -2,13 +2,21 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, ArrowLeftRight, ZoomIn, ZoomOut, Check, SlidersHorizontal } from 'lucide-react';
 import { ProcessedImageItem } from '../../types/image';
 import { formatBytes } from '../../lib/image-engine/file-utils';
+import { LanguageCode } from '../../lib/i18n/languages';
+import { t } from '../../lib/i18n/translations';
 
 interface BeforeAfterModalProps {
   item: ProcessedImageItem | null;
   onClose: () => void;
+  lang?: LanguageCode;
 }
 
-export const BeforeAfterModal: React.FC<BeforeAfterModalProps> = ({ item, onClose }) => {
+export const BeforeAfterModal: React.FC<BeforeAfterModalProps> = ({
+  item,
+  onClose,
+  lang = 'en',
+}) => {
+  const tr = t(lang);
   const [sliderPosition, setSliderPosition] = useState(50); // percentage
   const [isDragging, setIsDragging] = useState(false);
   const [modalOriginalUrl, setModalOriginalUrl] = useState<string>('');
@@ -68,7 +76,7 @@ export const BeforeAfterModal: React.FC<BeforeAfterModalProps> = ({ item, onClos
                 {item.name}
               </h3>
               <p className="text-xs text-slate-400">
-                Drag slider horizontally to inspect visual fidelity
+                {tr.beforeAfterSub}
               </p>
             </div>
           </div>
@@ -85,23 +93,23 @@ export const BeforeAfterModal: React.FC<BeforeAfterModalProps> = ({ item, onClos
         {/* Stats banner */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 border-b border-slate-800 bg-slate-950/70 p-3 px-6 text-xs">
           <div>
-            <span className="text-slate-500 block text-[10px] uppercase font-mono">Original</span>
+            <span className="text-slate-500 block text-[10px] uppercase font-mono">{tr.original}</span>
             <span className="font-semibold text-slate-200">{formatBytes(item.originalSize)}</span>
             <span className="text-[11px] text-slate-500 ml-1">({item.originalDimensions.width}×{item.originalDimensions.height})</span>
           </div>
           <div>
-            <span className="text-slate-500 block text-[10px] uppercase font-mono">Optimized</span>
+            <span className="text-slate-500 block text-[10px] uppercase font-mono">{tr.optimized}</span>
             <span className="font-semibold text-cyan-400">{formatBytes(item.resultSize || 0)}</span>
             <span className="text-[11px] text-slate-500 ml-1">({item.resultDimensions?.width}×{item.resultDimensions?.height})</span>
           </div>
           <div>
-            <span className="text-slate-500 block text-[10px] uppercase font-mono">Space Saved</span>
+            <span className="text-slate-500 block text-[10px] uppercase font-mono">{tr.spaceSaved}</span>
             <span className="font-bold text-emerald-400">
               {item.savedPercent && item.savedPercent > 0 ? `-${item.savedPercent}%` : '0%'}
             </span>
           </div>
           <div>
-            <span className="text-slate-500 block text-[10px] uppercase font-mono">Output Format</span>
+            <span className="text-slate-500 block text-[10px] uppercase font-mono">{tr.outputFormat}</span>
             <span className="font-semibold text-slate-200">{item.resultFormat}</span>
           </div>
         </div>
@@ -159,11 +167,11 @@ export const BeforeAfterModal: React.FC<BeforeAfterModalProps> = ({ item, onClos
             </div>
 
             {/* Labels */}
-            <div className="absolute top-3 left-3 z-10 rounded-md bg-black/60 px-2 py-1 text-[11px] font-mono font-medium text-white backdrop-blur-sm pointer-events-none border border-white/10">
-              ORIGINAL
+            <div className="absolute top-3 left-3 z-10 rounded-md bg-black/60 px-2 py-1 text-[11px] font-mono font-medium text-white backdrop-blur-sm pointer-events-none border border-white/10 uppercase">
+              {tr.original}
             </div>
-            <div className="absolute top-3 right-3 z-10 rounded-md bg-cyan-950/80 px-2 py-1 text-[11px] font-mono font-medium text-cyan-300 backdrop-blur-sm pointer-events-none border border-cyan-500/30">
-              OPTIMIZED
+            <div className="absolute top-3 right-3 z-10 rounded-md bg-cyan-950/80 px-2 py-1 text-[11px] font-mono font-medium text-cyan-300 backdrop-blur-sm pointer-events-none border border-cyan-500/30 uppercase">
+              {tr.optimized}
             </div>
           </div>
         </div>
@@ -171,7 +179,6 @@ export const BeforeAfterModal: React.FC<BeforeAfterModalProps> = ({ item, onClos
         {/* Footer controls */}
         <div className="flex items-center justify-between border-t border-slate-800 bg-slate-900 px-6 py-3 text-xs text-slate-400">
           <div className="flex items-center gap-2">
-            <span>Slider:</span>
             <input
               type="range"
               min="0"
@@ -187,7 +194,7 @@ export const BeforeAfterModal: React.FC<BeforeAfterModalProps> = ({ item, onClos
             onClick={onClose}
             className="rounded-xl bg-slate-800 px-4 py-1.5 font-semibold text-slate-200 hover:bg-slate-700 transition"
           >
-            Done
+            {tr.done}
           </button>
         </div>
       </div>

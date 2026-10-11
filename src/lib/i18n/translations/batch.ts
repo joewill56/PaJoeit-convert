@@ -9,6 +9,15 @@ export interface BatchStrings {
   retryFailed: string;
   clearCompleted: string;
   zipTooLargeWarning: string;
+  errDecode: string;
+  errMemory: string;
+  errUnsupported: string;
+  errDimension: string;
+  errCompression: string;
+  readyStatus: string;
+  queuedStatus: string;
+  errorStatus: string;
+  noImageOnHand: string;
 }
 
 export const BATCH_TRANSLATIONS: Record<LanguageCode, BatchStrings> = {
@@ -25,6 +34,15 @@ export const BATCH_TRANSLATIONS: Record<LanguageCode, BatchStrings> = {
     clearCompleted: 'Clear Completed',
     zipTooLargeWarning:
       'Your files were processed successfully, but this ZIP is too large for this device to create reliably. Please download the files individually or create smaller batches.',
+    errDecode: 'Image could not be decoded. The file may be corrupted or in an unsupported format.',
+    errMemory: 'This image is too large for this device to process safely. Try a smaller image or resize it first.',
+    errUnsupported: 'This image format is not supported.',
+    errDimension: 'This image exceeds the maximum supported dimensions for safe processing.',
+    errCompression: 'Compression failed while exporting the image. Please try again.',
+    readyStatus: 'Ready',
+    queuedStatus: 'Queued',
+    errorStatus: 'Error',
+    noImageOnHand: 'No image on hand?',
   },
 
   es: {
@@ -40,6 +58,15 @@ export const BATCH_TRANSLATIONS: Record<LanguageCode, BatchStrings> = {
     clearCompleted: 'Limpiar completadas',
     zipTooLargeWarning:
       'Los archivos se procesaron con éxito, pero este archivo ZIP es demasiado grande para crearse de forma fiable en este dispositivo. Descárgalos individualmente o en lotes más pequeños.',
+    errDecode: 'No se pudo decodificar la imagen. El archivo puede estar dañado o en un formato no compatible.',
+    errMemory: 'Esta imagen es demasiado grande para que este dispositivo la procese de forma segura.',
+    errUnsupported: 'Este formato de imagen no es compatible.',
+    errDimension: 'Esta imagen supera las dimensiones máximas admitidas.',
+    errCompression: 'Error de compresión al exportar la imagen. Inténtalo de nuevo.',
+    readyStatus: 'Listo',
+    queuedStatus: 'En cola',
+    errorStatus: 'Error',
+    noImageOnHand: '¿No tienes una imagen a mano?',
   },
 
   fr: {
@@ -55,6 +82,15 @@ export const BATCH_TRANSLATIONS: Record<LanguageCode, BatchStrings> = {
     clearCompleted: 'Effacer les terminées',
     zipTooLargeWarning:
       'Vos fichiers ont été traités avec succès, mais ce fichier ZIP est trop volumineux pour cet appareil. Veuillez télécharger les fichiers individuellement ou créer des lots plus petits.',
+    errDecode: 'L\'image n\'a pas pu être décodée. Le fichier est peut-être corrompu ou dans un format non pris en charge.',
+    errMemory: 'Cette image est trop volumineuse pour être traitée en toute sécurité sur cet appareil.',
+    errUnsupported: 'Ce format d\'image n\'est pas pris en charge.',
+    errDimension: 'Cette image dépasse les dimensions maximales prises en charge.',
+    errCompression: 'La compression a échoué lors de l\'exportation de l\'image. Veuillez réessayer.',
+    readyStatus: 'Prêt',
+    queuedStatus: 'En attente',
+    errorStatus: 'Erreur',
+    noImageOnHand: 'Pas d\'image sous la main ?',
   },
 
   de: {
@@ -70,6 +106,15 @@ export const BATCH_TRANSLATIONS: Record<LanguageCode, BatchStrings> = {
     clearCompleted: 'Abgeschlossene leeren',
     zipTooLargeWarning:
       'Ihre Dateien wurden erfolgreich verarbeitet, aber diese ZIP-Datei ist zu groß für dieses Gerät. Bitte laden Sie die Dateien einzeln herunter oder erstellen Sie kleinere Stapel.',
+    errDecode: 'Das Bild konnte nicht dekodiert werden. Die Datei ist möglicherweise beschädigt oder hat ein nicht unterstütztes Format.',
+    errMemory: 'Dieses Bild ist zu groß, um auf diesem Gerät sicher verarbeitet zu werden.',
+    errUnsupported: 'Dieses Bildformat wird nicht unterstützt.',
+    errDimension: 'Dieses Bild überschreitet die maximal unterstützten Abmessungen.',
+    errCompression: 'Komprimierung beim Exportieren des Bildes fehlgeschlagen. Bitte versuchen Sie es erneut.',
+    readyStatus: 'Fertig',
+    queuedStatus: 'Warteschlange',
+    errorStatus: 'Fehler',
+    noImageOnHand: 'Kein Bild zur Hand?',
   },
 
   pt: {
@@ -85,6 +130,15 @@ export const BATCH_TRANSLATIONS: Record<LanguageCode, BatchStrings> = {
     clearCompleted: 'Limpar concluídas',
     zipTooLargeWarning:
       'Seus arquivos foram processados com sucesso, mas este ZIP é grande demais para este dispositivo. Baixe os arquivos individualmente ou processe em lotes menores.',
+    errDecode: 'A imagem não pôde ser decodificada. O arquivo pode estar corrompido ou em um formato não suportado.',
+    errMemory: 'Esta imagem é muito grande para este dispositivo processar com segurança.',
+    errUnsupported: 'Este formato de imagem não é suportado.',
+    errDimension: 'Esta imagem excede as dimensões máximas suportadas.',
+    errCompression: 'A compressão falhou ao exportar a imagem. Tente novamente.',
+    readyStatus: 'Pronto',
+    queuedStatus: 'Na fila',
+    errorStatus: 'Erro',
+    noImageOnHand: 'Nenhuma imagem em mãos?',
   },
 
   ar: {
@@ -100,6 +154,15 @@ export const BATCH_TRANSLATIONS: Record<LanguageCode, BatchStrings> = {
     clearCompleted: 'مسح المكتملة',
     zipTooLargeWarning:
       'تمت معالجة ملفاتك بنجاح، لكن ملف ZIP كبير جداً بالنسبة لهذا الجهاز. يرجى تنزيل الملفات بشكل فردي أو إنشاء دفعات أصغر.',
+    errDecode: 'تعذر فك تشفير الصورة. قد يكون الملف تالفاً أو بتنسيق غير مدعوم.',
+    errMemory: 'هذه الصورة كبيرة جداً بحيث لا يمكن لهذا الجهاز معالجتها بأمان.',
+    errUnsupported: 'تنسيق الصورة هذا غير مدعوم.',
+    errDimension: 'تتجاوز هذه الصورة الحد الأقصى للأبعاد المدعومة.',
+    errCompression: 'فشل الضغط أثناء تصدير الصورة. يرجى المحاولة مرة أخرى.',
+    readyStatus: 'جاهز',
+    queuedStatus: 'في الانتظار',
+    errorStatus: 'خطأ',
+    noImageOnHand: 'ليست لديك صورة الآن؟',
   },
 
   hi: {
@@ -115,6 +178,15 @@ export const BATCH_TRANSLATIONS: Record<LanguageCode, BatchStrings> = {
     clearCompleted: 'पूर्ण हटाएं',
     zipTooLargeWarning:
       'आपकी फाइलें सफलतापूर्वक प्रोसेस हो गईं, लेकिन यह ज़िप इस डिवाइस के लिए बहुत बड़ी है। कृपया फ़ाइलों को व्यक्तिगत रूप से डाउनलोड करें।',
+    errDecode: 'छवि को डिकोड नहीं किया जा सका। फ़ाइल दूषित या असमर्थित प्रारूप में हो सकती है।',
+    errMemory: 'यह छवि इस डिवाइस पर सुरक्षित रूप से प्रोसेस करने के लिए बहुत बड़ी है।',
+    errUnsupported: 'यह छवि प्रारूप समर्थित नहीं है।',
+    errDimension: 'यह छवि अधिकतम समर्थित आयामों से अधिक है।',
+    errCompression: 'छवि निर्यात करते समय संपीड़न विफल रहा। कृपया पुनः प्रयास करें।',
+    readyStatus: 'तैयार',
+    queuedStatus: 'कतार में',
+    errorStatus: 'त्रुटि',
+    noImageOnHand: 'कोई छवि पास में नहीं है?',
   },
 
   id: {
@@ -130,6 +202,15 @@ export const BATCH_TRANSLATIONS: Record<LanguageCode, BatchStrings> = {
     clearCompleted: 'Hapus yang Selesai',
     zipTooLargeWarning:
       'File Anda berhasil diproses, namun file ZIP ini terlalu besar untuk perangkat ini. Silakan unduh file satu per satu atau buat batch yang lebih kecil.',
+    errDecode: 'Gambar tidak dapat didekode. File mungkin rusak atau dalam format yang tidak didukung.',
+    errMemory: 'Gambar ini terlalu besar untuk diproses dengan aman oleh perangkat ini.',
+    errUnsupported: 'Format gambar ini tidak didukung.',
+    errDimension: 'Gambar ini melebihi dimensi maksimum yang didukung.',
+    errCompression: 'Kompresi gagal saat mengekspor gambar. Silakan coba lagi.',
+    readyStatus: 'Siap',
+    queuedStatus: 'Antrean',
+    errorStatus: 'Kesalahan',
+    noImageOnHand: 'Tidak punya gambar saat ini?',
   },
 
   zh: {
@@ -145,6 +226,15 @@ export const BATCH_TRANSLATIONS: Record<LanguageCode, BatchStrings> = {
     clearCompleted: '清除已完成',
     zipTooLargeWarning:
       '您的文件已成功处理，但生成的 ZIP 文件对此设备过大。请单独下载文件或分批处理。',
+    errDecode: '无法解码图像。文件可能已损坏或格式不受支持。',
+    errMemory: '此图像过大，当前设备无法安全处理。请尝试较小的图像或先调整尺寸。',
+    errUnsupported: '不支持此图像格式。',
+    errDimension: '此图像超出支持的最大安全尺寸。',
+    errCompression: '导出图像时压缩失败，请重试。',
+    readyStatus: '就绪',
+    queuedStatus: '排队中',
+    errorStatus: '错误',
+    noImageOnHand: '手头没有图片？',
   },
 
   ja: {
@@ -160,5 +250,14 @@ export const BATCH_TRANSLATIONS: Record<LanguageCode, BatchStrings> = {
     clearCompleted: '完了をクリア',
     zipTooLargeWarning:
       'ファイルは正常に処理されましたが、このZIPファイルはお使いのデバイスで作成するには大きすぎます。ファイルを個別にダウンロードするか、より小さなバッチで作成してください。',
+    errDecode: '画像をデコードできませんでした。ファイルが破損しているか、サポートされていない形式の可能性があります。',
+    errMemory: 'この画像はこのデバイスで安全に処理するには大きすぎます。',
+    errUnsupported: 'この画像形式はサポートされていません。',
+    errDimension: 'この画像はサポートされている最大サイズを超えています。',
+    errCompression: '画像のエクスポート中に圧縮に失敗しました。もう一度お試しください。',
+    readyStatus: '完了',
+    queuedStatus: '待機中',
+    errorStatus: 'エラー',
+    noImageOnHand: '手元に画像がありませんか？',
   },
 };

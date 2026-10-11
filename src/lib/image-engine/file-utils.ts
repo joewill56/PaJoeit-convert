@@ -44,16 +44,359 @@ export function isSupportedImageFile(file: File): boolean {
   const validMimes = [
     'image/jpeg',
     'image/jpg',
+    'image/pjpeg',
     'image/png',
     'image/webp',
     'image/gif',
     'image/bmp',
+    'image/x-ms-bmp',
     'image/svg+xml',
     'image/avif',
   ];
-  if (validMimes.includes(file.type)) return true;
+  if (file.type && validMimes.includes(file.type.toLowerCase())) return true;
   const validExtensions = /\.(jpe?g|png|webp|gif|bmp|svg|avif)$/i;
   return validExtensions.test(file.name);
+}
+
+/**
+ * Inspects binary magic bytes to determine the true MIME type of an image buffer.
+ */
+export function detectMimeFromBytes(
+  bytes: Uint8Array,
+  fallbackMime?: string,
+  fileName?: string
+): string {
+  if (bytes && bytes.length >= 12) {
+    // 1. JPEG: FF D8 FF
+    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+      return 'image/jpeg';
+    }
+    // 2. PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (
+      bytes[0] === 0x89 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x4e &&
+      bytes[3] === 0x47 &&
+      bytes[4] === 0x0d &&
+      bytes[5] === 0x0a &&
+      bytes[6] === 0x1a &&
+      bytes[7] === 0x0a
+    ) {
+      return 'image/png';
+    }
+    // 3. GIF: 'GIF87a' or 'GIF89a'
+    if (
+      bytes[0] === 0x47 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x38
+    ) {
+      return 'image/gif';
+    }
+    // 4. WebP: 'RIFF'....'WEBP'
+    if (
+      bytes[0] === 0x52 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x46 &&
+      bytes[8] === 0x57 &&
+      bytes[9] === 0x45 &&
+      bytes[10] === 0x42 &&
+      bytes[11] === 0x50
+    ) {
+      return 'image/webp';
+    }
+    // 5. BMP: 'BM'
+    if (bytes[0] === 0x42 && bytes[1] === 0x4d) {
+      return 'image/bmp';
+    }
+    // 6. ISO Base Media File Format (AVIF / HEIC): 'ftyp' at offset 4
+    if (
+      bytes[4] === 0x66 &&
+      bytes[5] === 0x74 &&
+      bytes[6] === 0x79 &&
+      bytes[7] === 0x70
+    ) {
+      const brand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]).toLowerCase();
+      if (brand === 'avif' || brand === 'avis' || brand === 'MA1B' || brand === 'MA1A') {
+        return 'image/avif';
+      }
+      if (
+        brand === 'heic' ||
+        brand === 'heix' ||
+        brand === 'hevc' ||
+        brand === 'hevx' ||
+        brand === 'mif1' ||
+        brand === 'msf1'
+      ) {
+        return 'image/heic';
+      }
+    }
+    // 7. SVG check in first 256 bytes
+    try {
+      const headStr = new TextDecoder('utf-8', { fatal: false })
+        .decode(bytes.subarray(0, Math.min(bytes.length, 256)))
+        .trim()
+        .toLowerCase();
+      if (headStr.startsWith('<svg') || (headStr.startsWith('<?xml') && headStr.includes('<svg'))) {
+        return 'image/svg+xml';
+      }
+    } catch {
+      // Ignore text decode errors
+    }
+  }
+
+  const cleanFallback = (fallbackMime || '').trim().toLowerCase();
+  if (cleanFallback === 'image/jpg' || cleanFallback === 'image/pjpeg') {
+    return 'image/jpeg';
+  }
+  if (cleanFallback === 'image/x-ms-bmp') {
+    return 'image/bmp';
+  }
+  if (cleanFallback && cleanFallback.startsWith('image/')) {
+    return cleanFallback;
+  }
+
+  const lowerName = (fileName || '').toLowerCase();
+  if (lowerName.endsWith('.png')) return 'image/png';
+  if (lowerName.endsWith('.webp')) return 'image/webp';
+  if (lowerName.endsWith('.gif')) return 'image/gif';
+  if (lowerName.endsWith('.bmp')) return 'image/bmp';
+  if (lowerName.endsWith('.svg')) return 'image/svg+xml';
+  if (lowerName.endsWith('.avif')) return 'image/avif';
+  return 'image/jpeg';
+}
+
+/**
+ * Extracts EXIF orientation (1..8) from a JPEG buffer. Returns 1 if not present.
+ */
+export function parseJpegExifOrientation(bytes: Uint8Array): number {
+  if (!bytes || bytes.length < 12 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
+    return 1;
+  }
+
+  try {
+    let offset = 2;
+    const len = bytes.length;
+
+    while (offset < len - 4) {
+      if (bytes[offset] !== 0xff) {
+        offset++;
+        continue;
+      }
+      while (offset < len && bytes[offset] === 0xff) {
+        offset++;
+      }
+      if (offset >= len) break;
+
+      const marker = bytes[offset++];
+      if (marker === 0xda || marker === 0xd9) break;
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+
+      if (offset + 2 > len) break;
+      const segmentLength = (bytes[offset] << 8) | bytes[offset + 1];
+      if (segmentLength < 2) break;
+
+      if (marker === 0xe1 && offset + segmentLength <= len) {
+        if (
+          bytes[offset + 2] === 0x45 &&
+          bytes[offset + 3] === 0x78 &&
+          bytes[offset + 4] === 0x69 &&
+          bytes[offset + 5] === 0x66 &&
+          bytes[offset + 6] === 0x00 &&
+          bytes[offset + 7] === 0x00
+        ) {
+          const tiffOffset = offset + 8;
+          const isLittleEndian =
+            bytes[tiffOffset] === 0x49 && bytes[tiffOffset + 1] === 0x49;
+          const read16 = (o: number) =>
+            isLittleEndian
+              ? bytes[o] | (bytes[o + 1] << 8)
+              : (bytes[o] << 8) | bytes[o + 1];
+          const read32 = (o: number) =>
+            isLittleEndian
+              ? (bytes[o] |
+                  (bytes[o + 1] << 8) |
+                  (bytes[o + 2] << 16) |
+                  (bytes[o + 3] << 24)) >>>
+                0
+              : ((bytes[o] << 24) |
+                  (bytes[o + 1] << 16) |
+                  (bytes[o + 2] << 8) |
+                  bytes[o + 3]) >>>
+                0;
+
+          const firstIFDOffset = read32(tiffOffset + 4);
+          if (firstIFDOffset >= 8 && tiffOffset + firstIFDOffset + 2 <= len) {
+            const ifd0 = tiffOffset + firstIFDOffset;
+            const entries = read16(ifd0);
+            const maxEntries = Math.min(entries, 60);
+            for (let e = 0; e < maxEntries; e++) {
+              const entryOffset = ifd0 + 2 + e * 12;
+              if (entryOffset + 12 > len) break;
+              const tag = read16(entryOffset);
+              if (tag === 0x0112) {
+                const val = read16(entryOffset + 8);
+                if (val >= 1 && val <= 8) return val;
+              }
+            }
+          }
+        }
+      }
+
+      offset += segmentLength;
+    }
+  } catch {
+    // Ignore malformed EXIF
+  }
+
+  return 1;
+}
+
+/**
+ * Sanitizes Android / mobile camera JPEG streams that contain trailing vendor data
+ * after EOI (such as MPF multi-picture depth maps, Motion Photo streams, or UltraHDR
+ * secondary streams) or malformed proprietary APP3..APP15 segments that cause
+ * mobile browser image decoders to reject valid photographs.
+ */
+export function sanitizeJpegBytes(
+  bytes: Uint8Array,
+  stripExif = false
+): Uint8Array | null {
+  if (!bytes || bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
+    return null;
+  }
+
+  try {
+    const chunks: Uint8Array[] = [new Uint8Array([0xff, 0xd8])];
+    let offset = 2;
+    const len = bytes.length;
+    let foundSof = false;
+
+    while (offset < len) {
+      // Find next marker 0xFF
+      if (bytes[offset] !== 0xff) {
+        offset++;
+        continue;
+      }
+      while (offset < len && bytes[offset] === 0xff) {
+        offset++;
+      }
+      if (offset >= len) break;
+
+      const marker = bytes[offset++];
+
+      // End of Image (EOI)
+      if (marker === 0xd9) {
+        chunks.push(new Uint8Array([0xff, 0xd9]));
+        break;
+      }
+
+      // Standalone markers without length
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+        chunks.push(new Uint8Array([0xff, marker]));
+        continue;
+      }
+
+      if (offset + 2 > len) break;
+      const segLen = (bytes[offset] << 8) | bytes[offset + 1];
+      if (segLen < 2 || offset + segLen > len) break;
+
+      if (
+        marker === 0xc0 ||
+        marker === 0xc1 ||
+        marker === 0xc2 ||
+        marker === 0xc3 ||
+        (marker >= 0xc5 && marker <= 0xc7) ||
+        (marker >= 0xc9 && marker <= 0xcb) ||
+        (marker >= 0xcd && marker <= 0xcf)
+      ) {
+        foundSof = true;
+      }
+
+      // Start of Scan (SOS: 0xDA) -> copy SOS header + entropy scan until EOI (0xFF 0xD9) or next valid scan marker
+      if (marker === 0xda) {
+        const sosHeaderEnd = offset + segLen;
+        let scanPos = sosHeaderEnd;
+
+        while (scanPos < len) {
+          if (bytes[scanPos] === 0xff) {
+            if (scanPos + 1 >= len) {
+              scanPos++;
+              break;
+            }
+            const nextByte = bytes[scanPos + 1];
+            if (nextByte === 0x00) {
+              // Byte stuffing (0xFF 0x00)
+              scanPos += 2;
+              continue;
+            }
+            if (nextByte >= 0xd0 && nextByte <= 0xd7) {
+              // Restart marker (RST0..RST7)
+              scanPos += 2;
+              continue;
+            }
+            if (nextByte === 0xff) {
+              scanPos++;
+              continue;
+            }
+            // Reached EOI (0xD9) or another valid marker (e.g. progressive multi-scan SOS/DHT/DQT)
+            break;
+          }
+          scanPos++;
+        }
+
+        const fullScanSegment = new Uint8Array(2 + (scanPos - offset));
+        fullScanSegment[0] = 0xff;
+        fullScanSegment[1] = 0xda;
+        fullScanSegment.set(bytes.subarray(offset, scanPos), 2);
+        chunks.push(fullScanSegment);
+
+        offset = scanPos;
+        continue;
+      }
+
+      // Filter out vendor APP3..APP15 (0xE3..0xEF) and COM (0xFE) segments,
+      // and optionally APP1/APP2 if stripExif is requested.
+      const isVendorApp = marker >= 0xe2 && marker <= 0xef;
+      const isComment = marker === 0xfe;
+      const isExifApp1 = marker === 0xe1 && stripExif;
+
+      if (!isVendorApp && !isComment && !isExifApp1) {
+        const seg = new Uint8Array(2 + segLen);
+        seg[0] = 0xff;
+        seg[1] = marker;
+        seg.set(bytes.subarray(offset, offset + segLen), 2);
+        chunks.push(seg);
+      }
+
+      offset += segLen;
+    }
+
+    if (!foundSof) return null;
+
+    // Ensure EOI marker at the end
+    const lastChunk = chunks[chunks.length - 1];
+    if (
+      !lastChunk ||
+      lastChunk.length < 2 ||
+      lastChunk[lastChunk.length - 2] !== 0xff ||
+      lastChunk[lastChunk.length - 1] !== 0xd9
+    ) {
+      chunks.push(new Uint8Array([0xff, 0xd9]));
+    }
+
+    const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
+    const out = new Uint8Array(totalLen);
+    let writePos = 0;
+    for (const c of chunks) {
+      out.set(c, writePos);
+      writePos += c.length;
+    }
+    return out;
+  } catch {
+    return null;
+  }
 }
 
 export function generateOutputFilename(
@@ -322,9 +665,9 @@ export async function getImageDimensions(file: Blob): Promise<ImageDimensions> {
       return parsed;
     }
 
-    // If file is larger than 128KB and header was not found, check 256KB slice for large EXIF
+    // If file is larger than 128KB and header was not found, check up to 1MB slice for large camera EXIF/ICC
     if (file.size > 131072) {
-      const slice2Len = Math.min(file.size, 262144);
+      const slice2Len = Math.min(file.size, 1048576);
       const slice2 = file.slice(0, slice2Len);
       const arrayBuffer2 = await slice2.arrayBuffer();
       const parsed2 = parseHeaderDimensions(new Uint8Array(arrayBuffer2));
@@ -338,17 +681,29 @@ export async function getImageDimensions(file: Blob): Promise<ImageDimensions> {
 
   // Pass 2: Fast ImageBitmap probe with immediate closing
   if (typeof createImageBitmap === 'function') {
+    let bitmap: ImageBitmap | null = null;
     try {
-      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
-      const dims = { width: bitmap.width, height: bitmap.height };
-      bitmap.close();
-      return dims;
+      try {
+        bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      } catch {
+        bitmap = await createImageBitmap(file);
+      }
+      if (bitmap) {
+        const dims = { width: bitmap.width, height: bitmap.height };
+        return dims;
+      }
     } catch {
       // Fallback
+    } finally {
+      if (bitmap) {
+        try {
+          bitmap.close();
+        } catch {}
+      }
     }
   }
 
-  // Pass 3: HTMLImageElement with img.decode() and immediate cleanup
+  // Pass 3: HTMLImageElement with immediate cleanup
   const url = URL.createObjectURL(file);
   return new Promise((resolve) => {
     const img = new Image();
@@ -365,7 +720,10 @@ export async function getImageDimensions(file: Blob): Promise<ImageDimensions> {
     };
 
     img.onload = () => {
-      const dims = { width: img.naturalWidth || 1920, height: img.naturalHeight || 1080 };
+      const dims = {
+        width: img.naturalWidth || img.width || 1920,
+        height: img.naturalHeight || img.height || 1080,
+      };
       cleanup();
       resolve(dims);
     };
@@ -376,21 +734,6 @@ export async function getImageDimensions(file: Blob): Promise<ImageDimensions> {
     };
 
     img.src = url;
-
-    if (typeof img.decode === 'function') {
-      img
-        .decode()
-        .then(() => {
-          if (!isSettled && (img.naturalWidth > 0 || img.width > 0)) {
-            const dims = { width: img.naturalWidth || 1920, height: img.naturalHeight || 1080 };
-            cleanup();
-            resolve(dims);
-          }
-        })
-        .catch(() => {
-          // Handled by onload
-        });
-    }
   });
 }
 
@@ -416,20 +759,27 @@ export function createFallbackThumbnailSvg(name: string): string {
 
 /**
  * Creates a lightweight, low-resolution thumbnail blob URL (~8-15KB).
- * Crucial for mobile performance: prevents the browser from decoding
+ * Crucial for mobile performance: prevents the browser from retaining
  * full-resolution 4K/12MP camera images when rendering FileCards.
  */
-export async function generateThumbnailUrl(file: Blob, maxDim = 160): Promise<string> {
+export async function generateThumbnailUrl(
+  file: Blob,
+  maxDim = 160,
+  knownDimensions?: ImageDimensions
+): Promise<string> {
   // If SVG, create object URL directly (SVG is vector, zero raster memory)
   if (file.type === 'image/svg+xml' || (file instanceof File && file.name.endsWith('.svg'))) {
     return URL.createObjectURL(file);
   }
 
-  // Calculate target thumbnail dimensions from header if available
+  // Calculate target thumbnail dimensions from known or header dimensions
   let thumbW = maxDim;
   let thumbH = maxDim;
   try {
-    const dims = await getImageDimensions(file);
+    const dims =
+      knownDimensions && knownDimensions.width > 0 && knownDimensions.height > 0
+        ? knownDimensions
+        : await getImageDimensions(file);
     if (dims && dims.width > 0 && dims.height > 0) {
       if (dims.width > dims.height) {
         thumbW = maxDim;
@@ -462,23 +812,25 @@ export async function generateThumbnailUrl(file: Blob, maxDim = 160): Promise<st
         const canvas = document.createElement('canvas');
         canvas.width = thumbW;
         canvas.height = thumbH;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, thumbW, thumbH);
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'medium';
-          ctx.drawImage(bitmap, 0, 0, thumbW, thumbH);
+        try {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, thumbW, thumbH);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'medium';
+            ctx.drawImage(bitmap, 0, 0, thumbW, thumbH);
 
-          const blob = await new Promise<Blob | null>((res) =>
-            canvas.toBlob(res, 'image/jpeg', 0.65)
-          );
+            const blob = await new Promise<Blob | null>((res) =>
+              canvas.toBlob(res, 'image/jpeg', 0.65)
+            );
+            if (blob) {
+              return URL.createObjectURL(blob);
+            }
+          }
+        } finally {
           canvas.width = 0;
           canvas.height = 0;
-
-          if (blob) {
-            return URL.createObjectURL(blob);
-          }
         }
       }
     } catch {
@@ -497,10 +849,18 @@ export async function generateThumbnailUrl(file: Blob, maxDim = 160): Promise<st
     const tempUrl = URL.createObjectURL(file);
     const blob = await new Promise<Blob | null>((resolve) => {
       const img = new Image();
+      const cleanupImg = () => {
+        URL.revokeObjectURL(tempUrl);
+        img.onload = null;
+        img.onerror = null;
+        img.src = '';
+      };
+
       img.onload = () => {
+        const canvas = document.createElement('canvas');
         try {
-          const nw = img.naturalWidth || maxDim;
-          const nh = img.naturalHeight || maxDim;
+          const nw = img.naturalWidth || img.width || thumbW;
+          const nh = img.naturalHeight || img.height || thumbH;
           let tw = maxDim;
           let th = maxDim;
           if (nw > nh) {
@@ -511,13 +871,13 @@ export async function generateThumbnailUrl(file: Blob, maxDim = 160): Promise<st
             tw = Math.max(1, Math.round((nw / nh) * maxDim));
           }
 
-          const canvas = document.createElement('canvas');
           canvas.width = tw;
           canvas.height = th;
           const ctx = canvas.getContext('2d');
           if (!ctx) {
-            URL.revokeObjectURL(tempUrl);
-            img.src = '';
+            canvas.width = 0;
+            canvas.height = 0;
+            cleanupImg();
             resolve(null);
             return;
           }
@@ -525,26 +885,27 @@ export async function generateThumbnailUrl(file: Blob, maxDim = 160): Promise<st
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, tw, th);
           ctx.drawImage(img, 0, 0, tw, th);
+          cleanupImg();
 
-          canvas.toBlob((b) => {
-            canvas.width = 0;
-            canvas.height = 0;
-            URL.revokeObjectURL(tempUrl);
-            img.src = '';
-            img.onload = null;
-            img.onerror = null;
-            resolve(b);
-          }, 'image/jpeg', 0.65);
+          canvas.toBlob(
+            (b) => {
+              canvas.width = 0;
+              canvas.height = 0;
+              resolve(b);
+            },
+            'image/jpeg',
+            0.65
+          );
         } catch {
-          URL.revokeObjectURL(tempUrl);
-          img.src = '';
+          canvas.width = 0;
+          canvas.height = 0;
+          cleanupImg();
           resolve(null);
         }
       };
 
       img.onerror = () => {
-        URL.revokeObjectURL(tempUrl);
-        img.src = '';
+        cleanupImg();
         resolve(null);
       };
 
@@ -558,8 +919,63 @@ export async function generateThumbnailUrl(file: Blob, maxDim = 160): Promise<st
     // Fall through to SVG fallback
   }
 
-  // 3. Fallback: Inline SVG Data URI (zero memory overhead)
+  // 3. Fallback: Inline SVG Data URI (zero memory overhead; never marks original file as corrupt)
   return createFallbackThumbnailSvg(file instanceof File ? file.name : 'IMG');
+}
+
+/**
+ * Stabilizes an input File right at selection time:
+ * - Reads the file bytes once into a browser-owned Blob/File so Android content://
+ *   Photo Picker handles cannot expire before batch processing begins.
+ * - Detects true MIME type from binary magic bytes.
+ * - Extracts dimensions and EXIF orientation in a single zero-decode pass.
+ * - Generates a lightweight thumbnail without retaining full-resolution bitmaps.
+ */
+export async function prepareWorkspaceFile(file: File): Promise<{
+  safeFile: File;
+  dimensions: ImageDimensions;
+  detectedMime: string;
+  previewUrl: string;
+}> {
+  let safeFile = file;
+  let detectedMime = file.type || 'image/jpeg';
+  let dimensions: ImageDimensions | null = null;
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    detectedMime = detectMimeFromBytes(bytes, file.type, file.name);
+    dimensions = parseHeaderDimensions(bytes);
+    safeFile = new File([buffer], file.name, {
+      type: detectedMime,
+      lastModified: file.lastModified || Date.now(),
+    });
+  } catch {
+    // If full buffer read failed for any reason, fall back to original file reference
+    safeFile = file;
+  }
+
+  if (!dimensions || dimensions.width <= 0 || dimensions.height <= 0) {
+    try {
+      dimensions = await getImageDimensions(safeFile);
+    } catch {
+      dimensions = { width: 1920, height: 1080 };
+    }
+  }
+
+  let previewUrl = '';
+  try {
+    previewUrl = await generateThumbnailUrl(safeFile, 160, dimensions);
+  } catch {
+    previewUrl = createFallbackThumbnailSvg(safeFile.name);
+  }
+
+  return {
+    safeFile,
+    dimensions,
+    detectedMime,
+    previewUrl,
+  };
 }
 
 /**

@@ -14,12 +14,15 @@ import {
   SmartPreset,
   SupportedFormat,
 } from '../../types/image';
+import { LanguageCode } from '../../lib/i18n/languages';
+import { t } from '../../lib/i18n/translations';
 
 interface SettingsPanelProps {
   settings: ImageProcessingSettings;
   onChange: (updated: ImageProcessingSettings) => void;
   onApplyToAll: () => void;
   fileCount: number;
+  lang?: LanguageCode;
 }
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
@@ -27,8 +30,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onChange,
   onApplyToAll,
   fileCount,
+  lang = 'en',
 }) => {
   const [activePreset, setActivePreset] = useState<SmartPreset>('custom');
+  const tr = t(lang);
 
   const updateSetting = <K extends keyof ImageProcessingSettings>(
     key: K,
@@ -118,22 +123,22 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <Sliders className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Image Processing Pipeline</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Configure format, compression & dimensions</p>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">{tr.pipelineTitle}</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{tr.pipelineSub}</p>
           </div>
         </div>
 
         {/* Smart Presets Dropdown */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
-            <Sparkles className="w-3.5 h-3.5 text-cyan-500" /> Presets:
+            <Sparkles className="w-3.5 h-3.5 text-cyan-500" /> {tr.presets}:
           </span>
           <select
             value={activePreset}
             onChange={(e) => handleSmartPresetChange(e.target.value as SmartPreset)}
             className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:border-cyan-500 focus:outline-none"
           >
-            <option value="custom">Custom Configuration</option>
+            <option value="custom">{tr.customConfig}</option>
             <option value="website">Website (WebP • 1600px)</option>
             <option value="social-media">Social Media (JPG • 1080px)</option>
             <option value="messaging">Messaging & Chat (800px)</option>
@@ -148,11 +153,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         {/* 1. Output Format */}
         <div className="space-y-3">
           <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 font-mono flex items-center justify-between">
-            <span>1. Output Format</span>
+            <span>1. {tr.outputFormat}</span>
           </label>
           <div className="grid grid-cols-2 gap-2">
             {[
-              { id: 'original', label: 'Original' },
+              { id: 'original', label: tr.original },
               { id: 'image/jpeg', label: 'JPG' },
               { id: 'image/png', label: 'PNG' },
               { id: 'image/webp', label: 'WebP' },
@@ -186,7 +191,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 font-mono">
-              2. Compression
+              2. {tr.compression}
             </label>
             <span className="font-mono text-xs font-bold text-cyan-600 dark:text-cyan-400">
               {Math.round(settings.quality * 100)}%
@@ -253,7 +258,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 font-mono flex items-center gap-1.5">
               <Maximize2 className="w-3.5 h-3.5 text-cyan-500" />
-              <span>3. Resize</span>
+              <span>3. {tr.dimensions}</span>
             </label>
             <button
               type="button"
@@ -264,14 +269,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
               }`}
             >
-              {settings.resizeEnabled ? 'ACTIVE' : 'OFF'}
+              {settings.resizeEnabled ? tr.active : tr.off}
             </button>
           </div>
 
           <div className={`space-y-2 ${!settings.resizeEnabled ? 'opacity-40 pointer-events-none' : ''}`}>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <span className="text-[10px] text-slate-500 font-mono">Width (px)</span>
+                <span className="text-[10px] text-slate-500 font-mono">{tr.widthPx}</span>
                 <input
                   type="number"
                   placeholder="Auto"
@@ -284,7 +289,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </div>
 
               <div>
-                <span className="text-[10px] text-slate-500 font-mono">Height (px)</span>
+                <span className="text-[10px] text-slate-500 font-mono">{tr.heightPx}</span>
                 <input
                   type="number"
                   placeholder="Auto"
@@ -305,12 +310,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               {settings.lockAspectRatio ? (
                 <>
                   <Lock className="w-3 h-3 text-cyan-500" />
-                  <span>Lock aspect ratio</span>
+                  <span>{tr.lockAspectRatio}</span>
                 </>
               ) : (
                 <>
                   <Unlock className="w-3 h-3 text-amber-500" />
-                  <span>Aspect ratio unlocked</span>
+                  <span>{tr.lockAspectRatio}</span>
                 </>
               )}
             </button>
@@ -322,7 +327,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 font-mono flex items-center gap-1.5">
               <Target className="w-3.5 h-3.5 text-amber-500" />
-              <span>4. Target Size</span>
+              <span>4. {tr.targetSize}</span>
             </label>
             <button
               type="button"
@@ -340,7 +345,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
               }`}
             >
-              {settings.targetSizeEnabled ? 'ACTIVE' : 'OFF'}
+              {settings.targetSizeEnabled ? tr.active : tr.off}
             </button>
           </div>
 
@@ -370,7 +375,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500 font-mono">Custom KB:</span>
+              <span className="text-xs text-slate-500 font-mono">{tr.customKb}</span>
               <input
                 type="number"
                 min="10"
@@ -390,7 +395,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       {/* Footer bar of Settings */}
       <div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-800/80 pt-4 text-xs">
         <span className="text-slate-500 dark:text-slate-400">
-          Applied automatically to newly added files
+          {tr.applyToAllDesc(fileCount)}
         </span>
         <button
           type="button"
@@ -398,7 +403,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 font-semibold text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20 transition"
         >
           <Check className="w-3.5 h-3.5" />
-          <span>Apply settings to all {fileCount} images</span>
+          <span>{tr.applyToAll} ({fileCount})</span>
         </button>
       </div>
     </div>

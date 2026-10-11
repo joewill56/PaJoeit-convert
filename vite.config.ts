@@ -7,6 +7,24 @@ import {VitePWA} from 'vite-plugin-pwa';
 export default defineConfig(() => {
   return {
     plugins: [
+      {
+        name: 'pajoeit-locale-endpoint',
+        configureServer(server) {
+          server.middlewares.use('/api/locale', (req, res) => {
+            const raw =
+              (req.headers['cf-ipcountry'] as string) ||
+              (req.headers['x-country-code'] as string) ||
+              '';
+            const normalized = String(raw || '').trim().toUpperCase();
+            const isValid =
+              /^[A-Z]{2}$/.test(normalized) && normalized !== 'XX' && normalized !== 'T1';
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+            res.end(JSON.stringify({ country: isValid ? normalized : null }));
+          });
+        },
+      },
       react(),
       tailwindcss(),
       VitePWA({
@@ -59,6 +77,7 @@ export default defineConfig(() => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          navigateFallbackDenylist: [/^\/api\//, /^\/sitemap\.xml$/, /^\/robots\.txt$/],
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,

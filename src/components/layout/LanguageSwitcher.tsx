@@ -4,12 +4,14 @@ import {
   SUPPORTED_LANGUAGES,
   LanguageCode,
   buildLocalizedPath,
+  saveUserLanguagePreference,
 } from '../../lib/i18n/languages';
 
 interface LanguageSwitcherProps {
   currentLang: LanguageCode;
   currentPath: string;
   onNavigate: (path: string) => void;
+  onSelectLanguage?: (lang: LanguageCode) => void;
   compact?: boolean;
 }
 
@@ -17,6 +19,7 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
   currentLang,
   currentPath,
   onNavigate,
+  onSelectLanguage,
   compact = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -47,6 +50,10 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
 
   const handleSelect = (targetLang: LanguageCode) => {
     setIsOpen(false);
+    saveUserLanguagePreference(targetLang);
+    if (onSelectLanguage) {
+      onSelectLanguage(targetLang);
+    }
     const targetPath = buildLocalizedPath(currentPath, targetLang);
     onNavigate(targetPath);
   };

@@ -8,7 +8,6 @@ import {
 import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
 import { OfflineIndicator } from './components/layout/OfflineIndicator';
-import { AdPlaceholder } from './components/layout/AdPlaceholder';
 import { Breadcrumbs } from './components/layout/Breadcrumbs';
 import { Dropzone } from './components/upload/Dropzone';
 import { FileWorkspace } from './components/workspace/FileWorkspace';
@@ -38,6 +37,12 @@ import {
   LanguageCode,
   parsePath,
   SUPPORTED_LANGUAGES,
+  resolveActiveLanguage,
+  getUserLanguagePreference,
+  saveUserLanguagePreference,
+  saveAutoDetectedLanguage,
+  detectBrowserLanguage,
+  fetchVisitorCountryCode,
 } from './lib/i18n/languages';
 import { t } from './lib/i18n/translations';
 import { getLocalizedTool } from './lib/i18n/translations/tools';
@@ -49,6 +54,13 @@ export default function App() {
     }
     return '/';
   });
+
+  const [userSelectedLang, setUserSelectedLang] = useState<LanguageCode | null>(null);
+  const [savedUserLang, setSavedUserLang] = useState<LanguageCode | null>(() =>
+    getUserLanguagePreference()
+  );
+  const [ipCountryCode, setIpCountryCode] = useState<string | null>(null);
+  const [browserLang] = useState<LanguageCode | null>(() => detectBrowserLanguage());
 
   const [items, setItems] = useState<ProcessedImageItem[]>([]);
   const [batchLimitWarning, setBatchLimitWarning] = useState<string | null>(null);
@@ -62,9 +74,46 @@ export default function App() {
     targetSizeKB: 100,
   });
 
-  // Parse path to extract language and subPath
-  const { lang, subPath } = parsePath(currentPath);
+  // Parse path to extract explicit URL language and subPath
+  const { subPath, hasExplicitLang } = parsePath(currentPath);
+
+  // Resolve active language according to the 6-step priority hierarchy:
+  // 1. Explicit URL language -> 2. User-selected language -> 3. Saved user preference
+  // -> 4. IP-derived country -> 5. Browser language -> 6. English fallback
+  const lang = resolveActiveLanguage({
+    pathname: currentPath,
+    userSelectedLang,
+    savedUserLang,
+    ipCountryCode,
+    browserLang,
+  });
   const tr = t(lang);
+
+  // Fetch country-level code from Cloudflare Pages Function (/api/locale)
+  useEffect(() => {
+    let cancelled = false;
+    fetchVisitorCountryCode().then((country) => {
+      if (!cancelled && country) {
+        setIpCountryCode(country);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Record automatically detected language separately in sessionStorage when no manual choice exists
+  useEffect(() => {
+    if (!hasExplicitLang && !userSelectedLang && !savedUserLang) {
+      saveAutoDetectedLanguage(lang);
+    }
+  }, [lang, hasExplicitLang, userSelectedLang, savedUserLang]);
+
+  const handleSelectLanguage = useCallback((selected: LanguageCode) => {
+    setUserSelectedLang(selected);
+    setSavedUserLang(selected);
+    saveUserLanguagePreference(selected);
+  }, []);
 
   // Synchronize document direction and lang
   useEffect(() => {
@@ -387,7 +436,12 @@ export default function App() {
         <OfflineIndicator />
 
         {/* Global Navigation Header */}
-        <Header currentPath={currentPath} lang={lang} onNavigate={handleNavigate} />
+        <Header
+          currentPath={currentPath}
+          lang={lang}
+          onNavigate={handleNavigate}
+          onSelectLanguage={handleSelectLanguage}
+        />
 
         {/* Main Content Area */}
         <main className="flex-1">
@@ -484,7 +538,7 @@ export default function App() {
 
                     {/* Quick Sample Image Button */}
                     <div className="flex items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                      <span>No image on hand?</span>
+                      <span>{tr.noImageOnHand}</span>
                       <button
                         onClick={handleLoadSample}
                         className="font-semibold text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300 underline underline-offset-4 decoration-cyan-500/40 hover:decoration-cyan-400 transition"
@@ -508,13 +562,8 @@ export default function App() {
                 )}
               </section>
 
-              {/* Non-intrusive Ad space */}
-              <div className="mt-12 max-w-5xl mx-auto">
-                <AdPlaceholder slotId="pajoeit-below-tool-workspace" />
-              </div>
-
               {/* Dedicated Tool Content & Documentation */}
-              <div className="max-w-5xl mx-auto">
+              <div className="mt-12 max-w-5xl mx-auto">
                 <ToolDetailContent
                   tool={activeTool}
                   lang={lang}
@@ -584,7 +633,7 @@ export default function App() {
 
                     {/* Quick Sample Image Button */}
                     <div className="flex items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                      <span>No image on hand?</span>
+                      <span>{tr.noImageOnHand}</span>
                       <button
                         onClick={handleLoadSample}
                         className="font-semibold text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300 underline underline-offset-4 decoration-cyan-500/40 hover:decoration-cyan-400 transition"
@@ -608,13 +657,8 @@ export default function App() {
                 )}
               </section>
 
-              {/* Clean Non-Intrusive Monetization Area */}
-              <div className="mt-12 max-w-5xl mx-auto">
-                <AdPlaceholder slotId="pajoeit-below-workspace" />
-              </div>
-
               {/* Popular Tools Showcase */}
-              <div className="max-w-5xl mx-auto">
+              <div className="mt-12 max-w-5xl mx-auto">
                 <PopularToolsSection lang={lang} onNavigate={handleNavigate} />
               </div>
 
