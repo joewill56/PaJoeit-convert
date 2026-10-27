@@ -76,6 +76,7 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
+          mode: 'development',
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
           navigateFallbackDenylist: [/^\/api\//, /^\/sitemap\.xml$/, /^\/robots\.txt$/],
           runtimeCaching: [

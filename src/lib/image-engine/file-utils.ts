@@ -164,7 +164,8 @@ export function detectMimeFromBytes(
   if (lowerName.endsWith('.bmp')) return 'image/bmp';
   if (lowerName.endsWith('.svg')) return 'image/svg+xml';
   if (lowerName.endsWith('.avif')) return 'image/avif';
-  return 'image/jpeg';
+  if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) return 'image/jpeg';
+  return cleanFallback || 'application/octet-stream';
 }
 
 /**

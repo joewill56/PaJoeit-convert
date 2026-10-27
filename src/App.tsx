@@ -32,6 +32,7 @@ import {
   generateThumbnailUrl,
   createFallbackThumbnailSvg,
   isSupportedImageFile,
+  prepareWorkspaceFile,
 } from './lib/image-engine/file-utils';
 import {
   LanguageCode,
@@ -294,38 +295,47 @@ export default function App() {
 
       const newItems: ProcessedImageItem[] = [];
 
-      // Strictly serialized thumbnail and dimension extraction
-      // Process one image at a time, release resources, yield to browser
+      // Strictly serialized file preparation:
+      // prepareWorkspaceFile reads bytes once into a stable Blob (fixes Android content:// URI expiry),
+      // detects true MIME from magic bytes, extracts dimensions from headers, generates thumbnail.
       for (let i = 0; i < filesToAdd.length; i++) {
         const file = filesToAdd[i];
+
+        let safeFile: File = file;
         let dimensions = { width: 0, height: 0 };
+        let detectedMime: string = file.type || 'image/jpeg';
+        let previewUrl = '';
+
         try {
-          dimensions = await getImageDimensions(file);
+          const prepared = await prepareWorkspaceFile(file);
+          safeFile = prepared.safeFile;
+          dimensions = prepared.dimensions;
+          detectedMime = prepared.detectedMime;
+          previewUrl = prepared.previewUrl;
         } catch {
-          dimensions = { width: 1920, height: 1080 };
+          // Fallback: try basic dimension + thumbnail separately
+          try { dimensions = await getImageDimensions(file); } catch { dimensions = { width: 1920, height: 1080 }; }
+          try { previewUrl = await generateThumbnailUrl(file, 160); } catch { previewUrl = createFallbackThumbnailSvg(file.name); }
         }
 
-        let previewUrl = '';
-        try {
-          previewUrl = await generateThumbnailUrl(file, 160);
-        } catch {
-          previewUrl = createFallbackThumbnailSvg(file.name);
+        if (!previewUrl) {
+          previewUrl = createFallbackThumbnailSvg(safeFile.name);
         }
 
         newItems.push({
-          id: `${file.name}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          file,
-          name: file.name,
-          originalSize: file.size,
+          id: `${safeFile.name}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          file: safeFile,
+          name: safeFile.name,
+          originalSize: safeFile.size || file.size,
           originalDimensions: dimensions,
-          originalFormat: file.type || 'image/jpeg',
+          originalFormat: detectedMime,
           previewUrl,
           settings: { ...globalSettings },
           status: 'idle',
           progress: 0,
         });
 
-        // Yield between thumbnails to allow browser to reclaim resources
+        // Yield between files to allow browser to reclaim resources
         if (typeof (window as any).requestIdleCallback === 'function') {
           await new Promise((r) => (window as any).requestIdleCallback(r, { timeout: 30 }));
         } else {

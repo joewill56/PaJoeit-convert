@@ -725,6 +725,10 @@ export async function processSingleImage(
     if (err instanceof ImageProcessingError) {
       throw err;
     }
+    const msgLower = msg;
+    if (msgLower.includes('unsupported') || msgLower.includes('not supported') || msgLower.includes('avif') || msgLower.includes('heic')) {
+      throw new ImageProcessingError('UNSUPPORTED_FORMAT', 'This image format is not supported by your browser.');
+    }
     throw new ImageProcessingError(
       'DECODE_ERROR',
       'Image could not be decoded. The file may be corrupted or in an unsupported format.'
