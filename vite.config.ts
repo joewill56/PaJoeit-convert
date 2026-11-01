@@ -34,7 +34,6 @@ export default defineConfig(() => {
           'apple-touch-icon.png',
           'pajoeit-convert-icon.png',
           'pajoeit-convert-logo.png',
-          'icon.svg',
           'assets/pajoeit-convert-icon.png',
           'assets/pajoeit-convert-logo.png',
         ],
