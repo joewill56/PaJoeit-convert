@@ -29,7 +29,6 @@
 | Animation | Motion (Framer Motion) |
 | Icons | Lucide React |
 | Zip | JSZip |
-| AI (optional) | Google Gemini (`@google/genai`) |
 | Deployment | Cloudflare Workers / Pages |
 
 ---
